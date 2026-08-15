@@ -1,0 +1,6 @@
+cluster_name    = "gitops-observability-lab"
+server_count    = 1
+agent_count     = 2
+http_host_port  = 80
+https_host_port = 443
+api_host_port   = 6550

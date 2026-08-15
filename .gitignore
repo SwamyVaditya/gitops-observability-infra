@@ -1,0 +1,18 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+.terraform.lock.hcl
+
+# Generated kubeconfig — machine-specific, never commit
+terraform/01-cluster/outputs/
+
+# Editor/OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

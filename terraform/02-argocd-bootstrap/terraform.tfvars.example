@@ -1,0 +1,4 @@
+kubeconfig_path       = "../01-cluster/outputs/kubeconfig.yaml"
+argocd_namespace      = "argocd"
+argocd_release_name   = "argocd"
+argocd_chart_version  = "7.6.12"
