@@ -6,6 +6,17 @@ lifecycle only** — no Kubernetes application manifests live here. Once
 Argo CD is up, everything else is reconciled from the separate
 `gitops-observability-config` repo.
 
+## Architecture
+
+![GitOps observability lab architecture](docs/architecture.svg)
+
+This repo owns the **left-hand path**: `git push` → `terraform apply` →
+provisioned k3d cluster with Argo CD installed. Everything to the right of
+that (Argo CD watching `gitops-observability-config`, the OpenSearch/Fluent
+Bit/Dashboards stack, Traefik routing) is reconciled continuously by Argo
+CD, not by this repo — once `terraform apply` finishes here, this repo's
+job for that cluster session is done.
+
 ## Why two Terraform stages, not one
 
 There's no mature Terraform provider for k3d, so cluster creation goes
