@@ -17,6 +17,14 @@ Bit/Dashboards stack, Traefik routing) is reconciled continuously by Argo
 CD, not by this repo — once `terraform apply` finishes here, this repo's
 job for that cluster session is done.
 
+## Verified working
+
+![Argo CD installed and ready, prior to any Applications syncing](docs/screenshots/01-argocd-setup-ready.png)
+*Argo CD installed via Terraform (`02-argocd-bootstrap`) on a 3-node k3d
+cluster, logged in via CLI, UI reachable — before any Applications from
+`gitops-observability-config` have synced. See that repo's README for the
+follow-up screenshot showing all 4 Applications `Synced`/`Healthy`.*
+
 ## Why two Terraform stages, not one
 
 There's no mature Terraform provider for k3d, so cluster creation goes
