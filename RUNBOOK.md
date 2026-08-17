@@ -143,7 +143,12 @@ kubectl get pods -n observability -w
 ```
 
 Watch until `opensearch-cluster-master-0`, an `opensearch-dashboards-*`
-pod, and one `fluent-bit-collector-*` pod per node are all `Running`.
+pod, and one `fluent-bit-collector-*` pod per node are all `Running`, and
+`argocd app list` shows all 4 Applications `Synced`/`Healthy`. This exact
+sequence (including hitting and fixing the `machine-id` mount issue below)
+has been run end to end on Windows 11 + Docker Desktop — see "Known
+friction points" if `fluent-bit-collector` doesn't reach `Healthy` on the
+first try.
 
 ---
 
@@ -170,6 +175,39 @@ kubectl get svc -n observability
 
 If the real name differs, correct `opensearchHosts` (Dashboards) and `Host`
 (Fluent Bit Collector) in their respective `values.yaml`, commit, push.
+
+**`fluent-bit-collector` Application stays `Synced`/`Progressing` and never
+goes `Healthy`; pods stuck in `ContainerCreating`.** Confirmed on a real
+run. `kubectl describe pod/<fluent-bit-collector-pod> -n observability`
+shows:
+
+```
+Warning  FailedMount  ...  MountVolume.SetUp failed for volume "machine-id" : hostPath type check failed: /etc/machine-id is not a file
+```
+
+The chart's default `hostVolumes` mounts `/etc/machine-id` as a hostPath of
+`type: File`. k3d nodes are themselves Docker containers, not real
+VMs/bare metal, and don't reliably expose a real `/etc/machine-id` file at
+that path — the kubelet's existence check fails and the pod never leaves
+`ContainerCreating`. Fix: override `hostVolumes` in
+`environments/local/observability/fluent-bit-collector/values.yaml` to keep
+only the `/var/log` mount (Helm replaces list values wholesale, so this
+drops `machine-id` entirely — it's optional host metadata, not required
+for container log tailing):
+
+```yaml
+hostVolumes:
+  - name: logs
+    mountPath: /var/log
+    hostPath:
+      path: /var/log
+      type: Directory
+```
+
+Commit, push, and either wait for Argo CD's next poll or force it with
+`argocd app sync fluent-bit-collector`. The DaemonSet's existing pods
+terminate and recreate automatically once the pod template changes — no
+manual pod deletion needed.
 
 **OpenSearch pod OOMKilled or CrashLoopBackOff.** Docker Desktop's overall
 memory ceiling may be tighter than the 1Gi limit set in
