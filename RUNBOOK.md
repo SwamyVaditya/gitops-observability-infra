@@ -152,6 +152,70 @@ first try.
 
 ---
 
+## 4. Build and deploy the sample checkout app
+
+The `sampleapp` Application manifest is already in place in the config
+repo (`apps/sampleapp/sampleapp.yaml` — discovered automatically by
+`root-app`, same as the observability Applications were). What's missing
+is the images: there's no registry in this lab, so build locally and
+import straight into k3d.
+
+From your `gitops-observability-sampleapp` clone:
+
+```powershell
+docker build -t sampleapp/frontend-gateway:local ./services/frontend-gateway
+docker build -t sampleapp/order-service:local ./services/order-service
+docker build -t sampleapp/inventory-service:local ./services/inventory-service
+docker build -t sampleapp/load-generator:local ./services/load-generator
+
+k3d image import `
+  sampleapp/frontend-gateway:local `
+  sampleapp/order-service:local `
+  sampleapp/inventory-service:local `
+  sampleapp/load-generator:local `
+  -c gitops-observability-lab
+```
+
+Then, if you haven't already, push the config repo changes
+(`base/sampleapp/`, `environments/local/sampleapp/`,
+`apps/sampleapp/sampleapp.yaml`) — no new `kubectl apply` needed, Argo CD
+picks up the new `sampleapp` Application on its next poll (or force it:
+`argocd app sync sampleapp`).
+
+**Checkpoint:**
+
+```powershell
+kubectl get pods -n sampleapp
+argocd app get sampleapp
+```
+
+Expect `frontend-gateway`, `order-service`, `inventory-service`, and
+`load-generator` all `Running`, Application `Synced`/`Healthy`. Then watch
+real traffic land in OpenSearch — port-forward Dashboards and check the
+`fluent-bit`-created index for a growing document count:
+
+```powershell
+kubectl -n observability port-forward svc/opensearch-dashboards 5601:5601
+```
+
+Open `http://localhost:5601`, create an index pattern matching the index
+name set in `fluent-bit-collector`'s output config (`app-logs`), and
+confirm documents are arriving with `service`, `level`, and `error.type`
+fields populated — that's the whole pipeline working end to end, from a
+Python/Node checkout flow through to a searchable log store.
+
+**If images aren't found / `ErrImagePull` / `ImagePullBackOff`.** Confirm
+the import actually landed on every node, not just the server:
+
+```powershell
+docker exec k3d-gitops-observability-lab-agent-0 crictl images | Select-String sampleapp
+```
+
+If missing, re-run `k3d image import` — it's safe to re-run, and
+occasionally needs a retry right after a fresh `docker build`.
+
+---
+
 ## Known friction points (fix these when you hit them, not before)
 
 **PVC stuck `Pending`.** Check the StorageClass name actually matches:
@@ -208,6 +272,38 @@ Commit, push, and either wait for Argo CD's next poll or force it with
 `argocd app sync fluent-bit-collector`. The DaemonSet's existing pods
 terminate and recreate automatically once the pod template changes — no
 manual pod deletion needed.
+
+**Windows/WSL2 disk usage climbing continuously, seemingly without bound.**
+Confirmed on a real run — WSL2's `.vhdx` grew ~30GB+ and kept climbing
+with the cluster just sitting idle (no sample app running yet). Root
+cause: `fluent-bit-collector` originally matched `kube.*` — every
+namespace's logs, including Argo CD's own reconciliation noise and k3s
+system components — into a single static `app-logs` index with no
+retention policy. `local-path-provisioner` (the default k3s
+StorageClass) does **not** actually enforce a PVC's declared size as a
+disk quota, so nothing capped growth.
+
+Fixed as of `gitops-observability-config` commit `6d56d91` — see that
+repo's README "Disk usage / log retention" section for the full fix
+(namespace-scoped collection, daily indices, an ISM policy deleting
+indices after 3 days). If you hit this before pulling that fix:
+
+```powershell
+wsl --shutdown
+diskpart
+```
+then inside `diskpart` (adjust the path to match your actual Docker
+Desktop WSL disk location — check Settings → Resources → Advanced first):
+```
+select vdisk file="C:\Users\<you>\AppData\Local\Docker\wsl\disk\docker_data.vhdx"
+attach vdisk readonly
+compact vdisk
+detach vdisk
+exit
+```
+This reclaims space already consumed but doesn't fix the underlying
+unbounded growth on its own — pull the config repo fix too, or it'll
+climb again.
 
 **OpenSearch pod OOMKilled or CrashLoopBackOff.** Docker Desktop's overall
 memory ceiling may be tighter than the 1Gi limit set in
